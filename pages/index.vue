@@ -1,6 +1,12 @@
 <script setup>
 // Homepagina: duur kiezen → route maken → wandeling → afronden
 
+import {
+  canUseVibration,
+  isHapticEnabled,
+  setHapticEnabled
+} from '~/utils/hapticNudge.js'
+
 const durationOptions = [15, 20, 25, 30]
 
 const selectedMinutes = ref(null)
@@ -21,6 +27,15 @@ const showAccountPanel = ref(false)
 const accountEmail = ref('')
 const accountMessage = ref('')
 const accountBusy = ref(false)
+
+// Trillen bij afslag (stap 10) — voorkeur wordt op het apparaat onthouden
+const hapticOn = ref(isHapticEnabled())
+const hapticSupported = canUseVibration()
+
+function toggleHaptic() {
+  hapticOn.value = !hapticOn.value
+  setHapticEnabled(hapticOn.value)
+}
 
 // Wandeling-logica — refs hier "uitpakken" zodat de template ze herkent
 const {
@@ -287,6 +302,15 @@ async function submitAccountEmail() {
         {{ savedRoute.startInstruction }}
       </p>
 
+      <label v-if="hapticSupported" class="home__toggle">
+        <input
+          type="checkbox"
+          :checked="hapticOn"
+          @change="toggleHaptic"
+        />
+        Trillen bij afslag (links = kort-kort, rechts = langer)
+      </label>
+
       <button type="button" class="home__action" @click="startWalk">
         Start wandeling
       </button>
@@ -302,7 +326,20 @@ async function submitAccountEmail() {
       <p class="home__walk-instruction">
         {{ walkInstruction }}
       </p>
-      <p class="home__hint">Je telefoon mag in je zak. We geven een korte trilling bij een afslag als je telefoon dat ondersteunt.</p>
+      <p class="home__hint">
+        Telefoon in je zak mag. Bij een afslag trilt het:
+        links = twee korte tikken, rechts = langer, rechtdoor = één tik.
+        Laat dit tabblad open op de achtergrond voor GPS.
+      </p>
+
+      <label v-if="hapticSupported" class="home__toggle">
+        <input
+          type="checkbox"
+          :checked="hapticOn"
+          @change="toggleHaptic"
+        />
+        Trillen aan
+      </label>
 
       <button type="button" class="home__link" @click="stopWalkEarly">
         Wandeling stoppen
@@ -521,5 +558,21 @@ h1 {
 .home__action--small {
   font-size: 0.95rem;
   padding: 0.75rem;
+}
+
+.home__toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: #a8b0ac;
+  cursor: pointer;
+  text-align: left;
+}
+
+.home__toggle input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: #4a7c59;
 }
 </style>

@@ -69,13 +69,22 @@ export function buildTurnSteps(coordinates) {
     }
 
     let instruction = 'Ga rechtdoor'
-    if (turn > 0) instruction = 'Ga links'
-    if (turn < 0) instruction = 'Ga rechts'
+    let turnKind = 'straight'
+    if (turn > 0) {
+      instruction = 'Ga links'
+      turnKind = 'left'
+    }
+    if (turn < 0) {
+      instruction = 'Ga rechts'
+      turnKind = 'right'
+    }
 
     steps.push({
       lat: latMid,
       lng: lngMid,
-      instruction
+      instruction,
+      // Voor trilpatroon in stap 10 (links / rechts / rechtdoor)
+      turnKind
     })
   }
 

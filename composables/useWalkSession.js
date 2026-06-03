@@ -6,6 +6,7 @@ import {
   distanceMeters,
   getStartInstruction
 } from '~/utils/routeTurns.js'
+import { playStartNudge, playTurnNudge } from '~/utils/hapticNudge.js'
 
 export function useWalkSession() {
   const { saveRoute, saveWalk, isConfigured: isStorageConfigured } = useWalkStorage()
@@ -16,6 +17,10 @@ export function useWalkSession() {
     markWalkSynced,
     syncPendingWalksToCloud
   } = useWalkLocalCache()
+
+  const { beginWalkTracking, endWalkTracking, nudgeDistanceMeters } =
+    useWalkBackground()
+
   // In welk scherm zitten we?
   // pick = duur kiezen, ready = route klaar, walking = bezig, done = klaar
   const phase = ref('pick')
@@ -71,13 +76,6 @@ export function useWalkSession() {
     }
   }
 
-  // Korte trilling op je telefoon (werkt niet op elke browser/desktop)
-  function nudgePhone() {
-    if (typeof navigator !== 'undefined' && navigator.vibrate) {
-      navigator.vibrate(180)
-    }
-  }
-
   // Wordt steeds aangeroepen als je GPS-positie verandert tijdens het lopen
   function onPositionUpdate(position) {
     if (!savedRoute.value || phase.value !== 'walking') return
@@ -112,10 +110,10 @@ export function useWalkSession() {
 
     const metersToTurn = distanceMeters(userLat, userLng, step.lat, step.lng)
 
-    // Dicht bij een afslag? Toon aanwijzing en ga naar de volgende afslag
-    if (metersToTurn < 35) {
+    // Dicht bij een afslag? Tekst + trilpatroon (links/rechts/rechtdoor)
+    if (metersToTurn < nudgeDistanceMeters) {
       walkInstruction.value = step.instruction
-      nudgePhone()
+      playTurnNudge(step.turnKind || 'straight')
       turnIndex.value += 1
       return
     }
@@ -138,6 +136,10 @@ export function useWalkSession() {
     hasLeftStartArea = false
     walkInstruction.value = savedRoute.value.startInstruction
 
+    // Trilling bij start + GPS blijft luisteren als scherm uit of tab op achtergrond
+    playStartNudge()
+    beginWalkTracking()
+
     locationWatchId = navigator.geolocation.watchPosition(
       onPositionUpdate,
       () => {
@@ -150,6 +152,8 @@ export function useWalkSession() {
 
   // Stop GPS-volgen (belangrijk als je de pagina verlaat)
   function stopLocationWatch() {
+    endWalkTracking()
+
     if (locationWatchId !== null && navigator.geolocation) {
       navigator.geolocation.clearWatch(locationWatchId)
       locationWatchId = null
