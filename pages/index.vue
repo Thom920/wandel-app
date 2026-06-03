@@ -34,6 +34,20 @@ const {
   resetToPick
 } = useWalkSession()
 
+const { findOfflineRoute, isBrowserOnline, isLocalCacheAvailable } =
+  useWalkLocalCache()
+
+// Is dit een netwerkfout (geen internet / API niet bereikbaar)?
+function isNetworkError(error) {
+  if (!(error instanceof Error)) return false
+  const msg = error.message.toLowerCase()
+  return (
+    msg.includes('failed to fetch') ||
+    msg.includes('network') ||
+    msg.includes('load failed')
+  )
+}
+
 function chooseDuration(minutes) {
   if (phase.value !== 'pick') {
     resetToPick()
@@ -79,6 +93,24 @@ async function createRoute() {
   statusMessage.value = 'Je locatie en route worden berekend…'
 
   try {
+    // Geen internet? Probeer een route die al op je apparaat staat
+    if (!isBrowserOnline() && isLocalCacheAvailable()) {
+      const cached = findOfflineRoute(selectedMinutes.value)
+      if (cached) {
+        await setRouteFromApi({
+          ...cached,
+          fromOfflineCache: true
+        })
+        isError.value = false
+        statusMessage.value =
+          'Je bent offline. We gebruiken je laatst opgeslagen route voor deze duur.'
+        return
+      }
+      throw new Error(
+        'Geen internet en geen opgeslagen route voor deze duur. Kies een andere duur of maak eerst een route met wifi.'
+      )
+    }
+
     const position = await getUserPosition()
     const lat = position.coords.latitude
     const lng = position.coords.longitude
@@ -124,6 +156,21 @@ async function createRoute() {
         ? data.message
         : 'Je route is klaar.'
   } catch (error) {
+    // API niet bereikbaar? Zelfde offline-back-up als hierboven
+    if (isNetworkError(error) && isLocalCacheAvailable()) {
+      const cached = findOfflineRoute(selectedMinutes.value)
+      if (cached) {
+        await setRouteFromApi({
+          ...cached,
+          fromOfflineCache: true
+        })
+        isError.value = false
+        statusMessage.value =
+          'Geen verbinding met de server. Je opgeslagen route staat klaar.'
+        return
+      }
+    }
+
     isError.value = true
     statusMessage.value =
       error instanceof Error ? error.message : 'Er ging iets mis.'

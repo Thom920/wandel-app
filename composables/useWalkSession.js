@@ -1,4 +1,5 @@
 // Beheert de wandeling: route bewaren, starten, aanwijzingen, afronden
+// Werkt samen met lokale opslag (stap 9) en Supabase (stap 7/8)
 
 import {
   buildTurnSteps,
@@ -8,6 +9,13 @@ import {
 
 export function useWalkSession() {
   const { saveRoute, saveWalk, isConfigured: isStorageConfigured } = useWalkStorage()
+  const {
+    rememberRoute,
+    markRouteFinished,
+    rememberWalk,
+    markWalkSynced,
+    syncPendingWalksToCloud
+  } = useWalkLocalCache()
   // In welk scherm zitten we?
   // pick = duur kiezen, ready = route klaar, walking = bezig, done = klaar
   const phase = ref('pick')
@@ -42,12 +50,17 @@ export function useWalkSession() {
       startLat,
       startLng,
       startInstruction: getStartInstruction(coordinates),
-      supabaseRouteId: null
+      supabaseRouteId: null,
+      localCacheId: data.localCacheId || null,
+      fromOfflineCache: Boolean(data.fromOfflineCache)
     }
 
     turnSteps.value = buildTurnSteps(coordinates)
     turnIndex.value = 0
     phase.value = 'ready'
+
+    // Op je telefoon/computer bewaren (werkt ook zonder internet tijdens het lopen)
+    rememberRoute(savedRoute.value)
 
     // Supabase: route bewaren op de achtergrond (wandelen werkt ook als dit mislukt)
     if (isStorageConfigured()) {
@@ -159,20 +172,49 @@ export function useWalkSession() {
     phase.value = 'done'
     walkInstruction.value = ''
 
-    // Supabase: wandelgeschiedenis opslaan (stil, geen extra scherm)
     const route = savedRoute.value
+    const finishedAt = new Date().toISOString()
+
+    if (route?.localCacheId) {
+      markRouteFinished(route.localCacheId)
+    }
+
+    // Lokaal bewaren (back-up; bij succesvolle cloud meteen als "klaar" gemarkeerd)
+    let pendingWalkId = null
+    if (route && startedAt && walkedMinutes.value > 0) {
+      pendingWalkId = rememberWalk({
+        route,
+        walkedMinutes: walkedMinutes.value,
+        startedAt,
+        finishedAt,
+        supabaseRouteId: route.supabaseRouteId || null
+      })
+    }
+
+    // Supabase: direct opslaan als we een route-id hebben
+    let cloudSaved = false
     if (
       isStorageConfigured() &&
       route?.supabaseRouteId &&
       startedAt &&
       walkedMinutes.value > 0
     ) {
-      await saveWalk({
+      cloudSaved = await saveWalk({
         routeId: route.supabaseRouteId,
         route,
         walkedMinutes: walkedMinutes.value,
         startedAt
       })
+    }
+
+    // Al in de cloud? Dan niet nog een keer syncen
+    if (cloudSaved && pendingWalkId) {
+      markWalkSynced(pendingWalkId)
+    }
+
+    // Geen cloud? Wachtrij blijft staan; plugin probeert bij "online"
+    if (!cloudSaved && isStorageConfigured()) {
+      await syncPendingWalksToCloud()
     }
   }
 
