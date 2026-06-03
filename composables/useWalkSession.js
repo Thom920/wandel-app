@@ -7,11 +7,12 @@ import {
 } from '~/utils/routeTurns.js'
 
 export function useWalkSession() {
+  const { saveRoute, saveWalk, isConfigured: isStorageConfigured } = useWalkStorage()
   // In welk scherm zitten we?
   // pick = duur kiezen, ready = route klaar, walking = bezig, done = klaar
   const phase = ref('pick')
 
-  // Route-data van de API (blijft in het geheugen van de app, niet in database)
+  // Route-data van de API (geheugen + optioneel id in Supabase)
   const savedRoute = ref(null)
 
   // Afslagpunten en welke afslag nu aan de beurt is
@@ -29,7 +30,7 @@ export function useWalkSession() {
   let hasLeftStartArea = false // voorkomt direct "klaar" terwijl je nog bij start staat
 
   // Route opslaan na API-antwoord en scherm "klaar" tonen
-  function setRouteFromApi(data) {
+  async function setRouteFromApi(data) {
     const coordinates = data.coordinates || []
     const [startLng, startLat] = coordinates[0] || [0, 0]
 
@@ -40,12 +41,21 @@ export function useWalkSession() {
       coordinates,
       startLat,
       startLng,
-      startInstruction: getStartInstruction(coordinates)
+      startInstruction: getStartInstruction(coordinates),
+      supabaseRouteId: null
     }
 
     turnSteps.value = buildTurnSteps(coordinates)
     turnIndex.value = 0
     phase.value = 'ready'
+
+    // Supabase: route bewaren op de achtergrond (wandelen werkt ook als dit mislukt)
+    if (isStorageConfigured()) {
+      const routeId = await saveRoute(savedRoute.value)
+      if (routeId) {
+        savedRoute.value.supabaseRouteId = routeId
+      }
+    }
   }
 
   // Korte trilling op je telefoon (werkt niet op elke browser/desktop)
@@ -134,8 +144,10 @@ export function useWalkSession() {
   }
 
   // Wandeling netjes afsluiten
-  function finishWalk() {
+  async function finishWalk() {
     stopLocationWatch()
+
+    const startedAt = walkStartedAt
 
     if (walkStartedAt) {
       walkedMinutes.value = Math.max(
@@ -146,6 +158,22 @@ export function useWalkSession() {
 
     phase.value = 'done'
     walkInstruction.value = ''
+
+    // Supabase: wandelgeschiedenis opslaan (stil, geen extra scherm)
+    const route = savedRoute.value
+    if (
+      isStorageConfigured() &&
+      route?.supabaseRouteId &&
+      startedAt &&
+      walkedMinutes.value > 0
+    ) {
+      await saveWalk({
+        routeId: route.supabaseRouteId,
+        route,
+        walkedMinutes: walkedMinutes.value,
+        startedAt
+      })
+    }
   }
 
   // Terug naar beginscherm (nieuwe wandeling)

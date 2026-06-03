@@ -10,6 +10,18 @@ const isLoading = ref(false)
 
 const config = useRuntimeConfig()
 
+// Supabase (optioneel): stille gast-login + e-mail koppelen
+const {
+  isConfigured: isSupabaseConfigured,
+  linkEmail,
+  hasLinkedEmail
+} = useSupabaseAuth()
+
+const showAccountPanel = ref(false)
+const accountEmail = ref('')
+const accountMessage = ref('')
+const accountBusy = ref(false)
+
 // Wandeling-logica — refs hier "uitpakken" zodat de template ze herkent
 const {
   phase,
@@ -99,7 +111,7 @@ async function createRoute() {
       throw new Error('De route kwam leeg terug. Probeer het opnieuw.')
     }
 
-    setRouteFromApi({
+    await setRouteFromApi({
       chosenMinutes: data.chosenMinutes ?? selectedMinutes.value,
       distanceKm: data.distanceKm,
       durationMinutes: data.durationMinutes,
@@ -118,6 +130,16 @@ async function createRoute() {
   } finally {
     isLoading.value = false
   }
+}
+
+// Optioneel: e-mail koppelen (geen verplichting om te wandelen)
+async function submitAccountEmail() {
+  accountBusy.value = true
+  accountMessage.value = ''
+
+  const result = await linkEmail(accountEmail.value)
+  accountMessage.value = result.message || (result.ok ? 'Gelukt.' : 'Het lukte niet.')
+  accountBusy.value = false
 }
 </script>
 
@@ -164,6 +186,47 @@ async function createRoute() {
       <p v-if="statusMessage" class="home__status" :class="{ 'home__status--error': isError }">
         {{ statusMessage }}
       </p>
+
+      <!-- Account is optioneel — wandelen kan zonder -->
+      <div v-if="isSupabaseConfigured" class="home__account">
+        <button
+          type="button"
+          class="home__link"
+          @click="showAccountPanel = !showAccountPanel"
+        >
+          {{ showAccountPanel ? 'Account verbergen' : 'Account (optioneel)' }}
+        </button>
+
+        <div v-if="showAccountPanel" class="home__account-panel">
+          <p v-if="hasLinkedEmail" class="home__hint">
+            Je e-mail is gekoppeld. Je wandelingen worden opgeslagen bij dit account.
+          </p>
+          <template v-else>
+            <p class="home__hint">
+              Wandelen werkt zonder account. Koppel alleen een e-mail als je later op een
+              andere telefoon wilt verdergaan.
+            </p>
+            <label class="home__account-label" for="account-email">E-mail</label>
+            <input
+              id="account-email"
+              v-model="accountEmail"
+              type="email"
+              class="home__account-input"
+              placeholder="jij@voorbeeld.nl"
+              autocomplete="email"
+            />
+            <button
+              type="button"
+              class="home__action home__action--small"
+              :disabled="accountBusy"
+              @click="submitAccountEmail"
+            >
+              {{ accountBusy ? 'Even geduld…' : 'Koppel e-mail' }}
+            </button>
+          </template>
+          <p v-if="accountMessage" class="home__status">{{ accountMessage }}</p>
+        </div>
+      </div>
     </section>
 
     <!-- FASE 2: route is klaar — bevestiging vóór je echt gaat lopen -->
@@ -376,5 +439,40 @@ h1 {
   font-weight: 600;
   line-height: 1.35;
   color: #e8ebe9;
+}
+
+.home__account {
+  width: 100%;
+  margin-top: 0.5rem;
+}
+
+.home__account-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+  margin-top: 0.75rem;
+  text-align: left;
+}
+
+.home__account-label {
+  font-size: 0.85rem;
+  color: #a8b0ac;
+}
+
+.home__account-input {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #3d4a45;
+  border-radius: 0.5rem;
+  background: #242b28;
+  color: #e8ebe9;
+  font-size: 1rem;
+  box-sizing: border-box;
+}
+
+.home__action--small {
+  font-size: 0.95rem;
+  padding: 0.75rem;
 }
 </style>
