@@ -43,11 +43,21 @@ const {
   savedRoute,
   walkInstruction,
   walkedMinutes,
+  currentPosition,
   setRouteFromApi,
   startWalk,
   stopWalkEarly,
   resetToPick
 } = useWalkSession()
+
+// Kaart is een vangnet — standaard uit tijdens lopen (concept: telefoon in zak)
+const showMapWhileWalking = ref(false)
+
+watch(phase, (newPhase) => {
+  if (newPhase !== 'walking') {
+    showMapWhileWalking.value = false
+  }
+})
 
 const { findOfflineRoute, isBrowserOnline, isLocalCacheAvailable } =
   useWalkLocalCache()
@@ -292,7 +302,7 @@ async function submitAccountEmail() {
     </section>
 
     <!-- FASE 2: route is klaar — bevestiging vóór je echt gaat lopen -->
-    <section v-else-if="phase === 'ready'" class="home__block">
+    <section v-else-if="phase === 'ready'" class="home__block home__block--wide">
       <p class="home__ready-title">Je route is klaar</p>
       <p class="home__status">{{ statusMessage }}</p>
       <p v-if="savedRoute" class="home__route">
@@ -301,6 +311,14 @@ async function submitAccountEmail() {
       <p v-if="savedRoute" class="home__hint">
         {{ savedRoute.startInstruction }}
       </p>
+
+      <ClientOnly v-if="savedRoute?.coordinates?.length">
+        <WalkMap
+          :coordinates="savedRoute.coordinates"
+          :start-lat="savedRoute.startLat"
+          :start-lng="savedRoute.startLng"
+        />
+      </ClientOnly>
 
       <label v-if="hapticSupported" class="home__toggle">
         <input
@@ -340,6 +358,25 @@ async function submitAccountEmail() {
         />
         Trillen aan
       </label>
+
+      <button
+        v-if="savedRoute?.coordinates?.length"
+        type="button"
+        class="home__link"
+        @click="showMapWhileWalking = !showMapWhileWalking"
+      >
+        {{ showMapWhileWalking ? 'Kaart verbergen' : 'Kaart tonen (optioneel)' }}
+      </button>
+
+      <ClientOnly v-if="showMapWhileWalking && savedRoute?.coordinates?.length">
+        <WalkMap
+          :coordinates="savedRoute.coordinates"
+          :start-lat="savedRoute.startLat"
+          :start-lng="savedRoute.startLng"
+          :user-lat="currentPosition?.lat ?? null"
+          :user-lng="currentPosition?.lng ?? null"
+        />
+      </ClientOnly>
 
       <button type="button" class="home__link" @click="stopWalkEarly">
         Wandeling stoppen
@@ -408,6 +445,10 @@ h1 {
 }
 
 .home__block--walk {
+  max-width: 22rem;
+}
+
+.home__block--wide {
   max-width: 22rem;
 }
 

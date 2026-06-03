@@ -38,6 +38,9 @@ export function useWalkSession() {
   // Hoeveel minuten gewandeld (bij afronden)
   const walkedMinutes = ref(0)
 
+  // Waar je nu bent (voor kaart tijdens wandelen) — null als we geen GPS hebben
+  const currentPosition = ref(null)
+
   let locationWatchId = null
   let walkStartedAt = null
   let hasLeftStartArea = false // voorkomt direct "klaar" terwijl je nog bij start staat
@@ -82,6 +85,7 @@ export function useWalkSession() {
 
     const userLat = position.coords.latitude
     const userLng = position.coords.longitude
+    currentPosition.value = { lat: userLat, lng: userLng }
     const route = savedRoute.value
 
     const metersFromStart = distanceMeters(
@@ -134,6 +138,7 @@ export function useWalkSession() {
     turnIndex.value = 0
     walkStartedAt = Date.now()
     hasLeftStartArea = false
+    currentPosition.value = null
     walkInstruction.value = savedRoute.value.startInstruction
 
     // Trilling bij start + GPS blijft luisteren als scherm uit of tab op achtergrond
@@ -233,6 +238,7 @@ export function useWalkSession() {
     walkedMinutes.value = 0
     walkStartedAt = null
     hasLeftStartArea = false
+    currentPosition.value = null
   }
 
   // Handmatig stoppen tijdens wandeling
@@ -249,6 +255,7 @@ export function useWalkSession() {
     savedRoute,
     walkInstruction,
     walkedMinutes,
+    currentPosition,
     setRouteFromApi,
     startWalk,
     stopWalkEarly,
