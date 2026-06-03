@@ -6,6 +6,7 @@ import {
   isHapticEnabled,
   setHapticEnabled
 } from '~/utils/hapticNudge.js'
+import { getRouteApiUrl } from '~/utils/apiUrl.js'
 
 const durationOptions = [15, 20, 25, 30]
 
@@ -139,9 +140,7 @@ async function createRoute() {
     const position = await getUserPosition()
     const lat = position.coords.latitude
     const lng = position.coords.longitude
-    // Lege apiBase = zelfde website (Vercel of één npm run dev)
-    const base = (config.public.apiBase || '').replace(/\/$/, '')
-    const apiUrl = base ? `${base}/api/route` : '/api/route'
+    const apiUrl = getRouteApiUrl(config.public.apiBase)
 
     const response = await fetch(apiUrl, {
       method: 'POST',
