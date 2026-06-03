@@ -1,36 +1,41 @@
 <script setup>
-// Logica van de homepagina (Composition API + script setup)
+// Homepagina: duur kiezen → route maken → wandeling → afronden
 
 const durationOptions = [15, 20, 25, 30]
 
-// Gekozen wandelduur in minuten (null = nog niets gekozen)
 const selectedMinutes = ref(null)
-
-// Tekst voor de gebruiker: laden, fout, of succes
 const statusMessage = ref('')
 const isError = ref(false)
 const isLoading = ref(false)
 
-// Na succes: korte route-info (afstand); coordinates bewaren we voor de kaart (stap 5)
-const routeInfo = ref(null)
-
-// apiBase komt uit nuxt.config.ts (bijv. http://localhost:3003)
 const config = useRuntimeConfig()
 
+// Wandeling-logica — refs hier "uitpakken" zodat de template ze herkent
+const {
+  phase,
+  savedRoute,
+  walkInstruction,
+  walkedMinutes,
+  setRouteFromApi,
+  startWalk,
+  stopWalkEarly,
+  resetToPick
+} = useWalkSession()
+
 function chooseDuration(minutes) {
+  if (phase.value !== 'pick') {
+    resetToPick()
+  }
   selectedMinutes.value = minutes
   statusMessage.value = ''
   isError.value = false
-  routeInfo.value = null
 }
 
-// Zet API-fouten altijd om naar leesbare tekst (nooit "true" of [object Object])
 function apiErrorText(data) {
   if (typeof data?.error === 'string') return data.error
   return 'Route kon niet worden gemaakt. Controleer of npm run dev:api draait.'
 }
 
-// Vraag de GPS-locatie van de browser op
 function getUserPosition() {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
@@ -51,7 +56,6 @@ function getUserPosition() {
   })
 }
 
-// Hoofdstap: locatie ophalen → naar onze API sturen → route terug
 async function createRoute() {
   if (!selectedMinutes.value) {
     statusMessage.value = 'Kies eerst hoe lang je wilt lopen.'
@@ -61,19 +65,12 @@ async function createRoute() {
   isLoading.value = true
   isError.value = false
   statusMessage.value = 'Je locatie en route worden berekend…'
-  routeInfo.value = null
 
   try {
     const position = await getUserPosition()
     const lat = position.coords.latitude
     const lng = position.coords.longitude
-
     const apiUrl = `${config.public.apiBase}/api/route`
-
-    // In de browserconsole zie je naar welk adres we echt vragen (handig bij poort-problemen)
-    if (import.meta.dev) {
-      console.log('Route opvragen bij:', apiUrl)
-    }
 
     const response = await fetch(apiUrl, {
       method: 'POST',
@@ -102,18 +99,18 @@ async function createRoute() {
       throw new Error('De route kwam leeg terug. Probeer het opnieuw.')
     }
 
-    routeInfo.value = {
+    setRouteFromApi({
       chosenMinutes: data.chosenMinutes ?? selectedMinutes.value,
       distanceKm: data.distanceKm,
       durationMinutes: data.durationMinutes,
       coordinates: data.coordinates
-    }
+    })
 
     isError.value = false
     statusMessage.value =
       typeof data.message === 'string'
         ? data.message
-        : 'Je route is klaar. Je kunt straks gaan lopen.'
+        : 'Je route is klaar.'
   } catch (error) {
     isError.value = true
     statusMessage.value =
@@ -131,7 +128,12 @@ async function createRoute() {
       <p>Even weg. Zonder nadenken over de route.</p>
     </header>
 
-    <section class="home__picker" aria-labelledby="duration-label">
+    <!-- FASE 1: duur kiezen en route laten maken -->
+    <section
+      v-if="phase === 'pick'"
+      class="home__block"
+      aria-labelledby="duration-label"
+    >
       <p id="duration-label" class="home__label">Hoe lang wil je lopen?</p>
 
       <div class="home__buttons">
@@ -149,26 +151,68 @@ async function createRoute() {
         </button>
       </div>
 
-      <!-- Alleen zichtbaar als er een duur is gekozen -->
       <button
         v-if="selectedMinutes"
         type="button"
-        class="home__start"
+        class="home__action"
         :disabled="isLoading"
         @click="createRoute"
       >
         {{ isLoading ? 'Even geduld…' : 'Maak mijn route' }}
       </button>
 
-      <!-- Status: laden, fout of bevestiging -->
       <p v-if="statusMessage" class="home__status" :class="{ 'home__status--error': isError }">
         {{ statusMessage }}
       </p>
+    </section>
 
-      <!-- Afstand; de minuten staan al in statusMessage van de API -->
-      <p v-if="routeInfo" class="home__route">
-        Afstand: ongeveer {{ routeInfo.distanceKm }} km.
+    <!-- FASE 2: route is klaar — bevestiging vóór je echt gaat lopen -->
+    <section v-else-if="phase === 'ready'" class="home__block">
+      <p class="home__ready-title">Je route is klaar</p>
+      <p class="home__status">{{ statusMessage }}</p>
+      <p v-if="savedRoute" class="home__route">
+        Afstand: ongeveer {{ savedRoute.distanceKm }} km.
       </p>
+      <p v-if="savedRoute" class="home__hint">
+        {{ savedRoute.startInstruction }}
+      </p>
+
+      <button type="button" class="home__action" @click="startWalk">
+        Start wandeling
+      </button>
+
+      <button type="button" class="home__link" @click="resetToPick">
+        Andere duur kiezen
+      </button>
+    </section>
+
+    <!-- FASE 3: je loopt — grote tekst, weinig afleiding -->
+    <section v-else-if="phase === 'walking'" class="home__block home__block--walk">
+      <p class="home__walk-label">Nu</p>
+      <p class="home__walk-instruction">
+        {{ walkInstruction }}
+      </p>
+      <p class="home__hint">Je telefoon mag in je zak. We geven een korte trilling bij een afslag als je telefoon dat ondersteunt.</p>
+
+      <button type="button" class="home__link" @click="stopWalkEarly">
+        Wandeling stoppen
+      </button>
+    </section>
+
+    <!-- FASE 4: klaar — warme afronding, geen prestaties -->
+    <section v-else-if="phase === 'done'" class="home__block">
+      <p class="home__ready-title">Goed gedaan</p>
+      <p class="home__status">
+        Je was ongeveer {{ walkedMinutes }}
+        {{ walkedMinutes === 1 ? 'minuut' : 'minuten' }} onderweg.
+      </p>
+      <p v-if="savedRoute" class="home__hint">
+        Je koos {{ savedRoute.chosenMinutes }} minuten. Even weg zijn was het doel.
+      </p>
+
+      <button type="button" class="home__action" @click="resetToPick">
+        Nieuwe wandeling
+      </button>
     </section>
   </main>
 </template>
@@ -180,7 +224,7 @@ async function createRoute() {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2.5rem;
+  gap: 2rem;
   padding: 1.5rem;
   background: #1a1f1e;
   color: #e8ebe9;
@@ -207,19 +251,30 @@ h1 {
   line-height: 1.5;
 }
 
-.home__picker {
+.home__block {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 1.25rem;
   width: 100%;
-  max-width: 18rem;
+  max-width: 20rem;
+}
+
+.home__block--walk {
+  max-width: 22rem;
 }
 
 .home__label {
   margin: 0;
   font-size: 1rem;
   color: #c5ccc8;
+}
+
+.home__ready-title {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: #e8ebe9;
 }
 
 .home__buttons {
@@ -238,17 +293,10 @@ h1 {
   font-size: 1.05rem;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
 }
 
 .home__button:hover:not(:disabled) {
   background: #2d3633;
-  border-color: #4d5c56;
-}
-
-.home__button:focus-visible {
-  outline: 2px solid #6b8f7a;
-  outline-offset: 2px;
 }
 
 .home__button--selected {
@@ -258,11 +306,9 @@ h1 {
 
 .home__button:disabled {
   opacity: 0.6;
-  cursor: not-allowed;
 }
 
-/* Groene actieknop: start route-berekening */
-.home__start {
+.home__action {
   width: 100%;
   padding: 1rem;
   border: none;
@@ -274,13 +320,22 @@ h1 {
   cursor: pointer;
 }
 
-.home__start:hover:not(:disabled) {
+.home__action:hover {
   background: #558f66;
 }
 
-.home__start:disabled {
+.home__action:disabled {
   opacity: 0.7;
   cursor: wait;
+}
+
+.home__link {
+  background: none;
+  border: none;
+  color: #8a9590;
+  font-size: 0.9rem;
+  cursor: pointer;
+  text-decoration: underline;
 }
 
 .home__status {
@@ -298,6 +353,28 @@ h1 {
   margin: 0;
   font-size: 0.95rem;
   color: #b8d4c4;
-  line-height: 1.4;
+}
+
+.home__hint {
+  margin: 0;
+  font-size: 0.875rem;
+  color: #8a9590;
+  line-height: 1.45;
+}
+
+.home__walk-label {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #8a9590;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.home__walk-instruction {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: #e8ebe9;
 }
 </style>
