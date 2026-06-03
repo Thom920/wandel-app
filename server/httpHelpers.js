@@ -14,7 +14,8 @@ export function setCorsHeaders(res, origin) {
   const allowed =
     origin &&
     (origin.startsWith('http://localhost:') ||
-      origin.startsWith('http://127.0.0.1:'))
+      origin.startsWith('http://127.0.0.1:') ||
+      origin.endsWith('.vercel.app'))
 
   return {
     'Access-Control-Allow-Origin': allowed ? origin : 'http://localhost:3000',

@@ -139,7 +139,9 @@ async function createRoute() {
     const position = await getUserPosition()
     const lat = position.coords.latitude
     const lng = position.coords.longitude
-    const apiUrl = `${config.public.apiBase}/api/route`
+    // Lege apiBase = zelfde website (Vercel of één npm run dev)
+    const base = (config.public.apiBase || '').replace(/\/$/, '')
+    const apiUrl = base ? `${base}/api/route` : '/api/route'
 
     const response = await fetch(apiUrl, {
       method: 'POST',
